@@ -1,0 +1,6 @@
+interface:
+  display_name: "Refine Notion Feature"
+  short_description: "Review Notion features and publish tracer-bullet tickets"
+  default_prompt: "Use $refine-notion-feature to review this Notion feature, post clarification questions, and publish approved tracer-bullet tickets."
+policy:
+  allow_implicit_invocation: false
