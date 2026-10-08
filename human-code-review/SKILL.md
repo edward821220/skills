@@ -1,12 +1,12 @@
 ---
 name: human-code-review
-description: 整合 code-review-and-quality 與 speak-human-tw 進行 PR、commit 或 branch diff 的多軸程式碼審查。支援關聯 Ticket 規格比對、PR 既有留言去重、Local 髒目錄 worktree 隔離審查，並支援選取發布 GitHub inline comments。
+description: 以 ce-code-review 為審查引擎、speak-human-tw 潤飾輸出，進行 PR、commit 或 branch diff 的程式碼審查。支援關聯 Ticket 規格比對、PR 既有留言去重、Local 髒目錄 worktree 隔離審查，並支援選取發布 GitHub inline comments。
 ---
 
 # Human Code Review
 
 協調程式碼審查與 GitHub PR inline 留言發布。核心依賴：
-- **審查標準與判定**：**完整載入並嚴格遵循 [`code-review-and-quality`](../code-review-and-quality/SKILL.md)**。本 skill 不重複定義審查細則，審查的五軸檢核點（Correctness, Readability, Architecture, Security, Performance）、嚴重度分級、結構性解法（Structural Remedies）、槓桿排序原則、Dead Code 檢查及 Approve/Request Changes 判定標準均直接引用該 skill。
+- **審查引擎**：**委派 `ce-code-review`**（`~/.pi/agent/git/github.com/EveryInc/compound-engineering-plugin/skills/ce-code-review/SKILL.md`）執行多 persona 審查，取得帶 severity（P0–P3）、confidence、file:line、suggested_fix 的 findings。本 skill 不自訂審查細則；多 persona 派發需要 `pi-subagents` 套件，未安裝時退為依其 severity rubric 自行靜態審查。判定採用其 merge bar：能實質提升程式碼健康度即 Approve，不以個人寫法風格卡關；對結構退化與安全漏洞嚴格把關。
 - **語氣與自然表達**：遵循 [`speak-human-tw`](../speak-human-tw/SKILL.md)（台灣繁中習慣、去 AI 味、明確點出 Why 與 How、保留英文技術術語；跳過文章潤稿確認清單）。
 - **審查執行原則（禁止跑測試與 Linter）**：審查過程**嚴禁執行專案建置（build/check）、測試套件（test suites）或 Linter / Formatter（clippy, eslint, typecheck 等）**。這些檢查皆由 CI 自動化流程把關。審查一律採用**靜態程式碼閱讀、Diff 分析、架構與 Domain Model 比對**，並透過「閱讀測試程式碼本身」來審查測試意圖與邊界覆蓋，不重複執行任何本機建置與測試指令。
 
@@ -19,7 +19,7 @@ description: 整合 code-review-and-quality 與 speak-human-tw 進行 PR、commi
 - **PR**：
   1. **讀取 PR 資訊與關聯 Ticket**：
      - 使用 `gh pr view <PR> --json title,body,headRefName` 取得 PR 標題、說明與 branch。
-     - **檢查是否附有 Ticket**：若 PR 內文、標題或 branch 包含關聯 Ticket / Issue 連結或 ID（例如 Notion、Linear、Jira、GitHub Issue 或本機 task plan），**必須優先讀取該 Ticket / Spec 需求與驗收條件**，作為 `code-review-and-quality` 中 Correctness 軸向的核心比對依據。
+     - **檢查是否附有 Ticket**：若 PR 內文、標題或 branch 包含關聯 Ticket / Issue 連結或 ID（例如 Notion、Linear、Jira、GitHub Issue 或本機 task plan），**必須優先讀取該 Ticket / Spec 需求與驗收條件**，作為 Correctness 面向的核心比對依據（逐項核對驗收條件）。
   2. **取得 Diff 與既有討論**：
      - 抓取 Diff：`gh pr diff <PR>`。
      - 抓取既有討論：`gh api repos/{owner}/{repo}/pulls/<PR>/comments`（供去重比對）。
@@ -40,12 +40,12 @@ description: 整合 code-review-and-quality 與 speak-human-tw 進行 PR、commi
 - **Commit / Branch / Working Tree**：`git show <COMMIT>`、`git diff origin/main...<BRANCH>` 或 `git diff HEAD`。
 
 ### Step 2：執行審查、去重並以人話輸出
-1. **執行 `code-review-and-quality` 完整審查流程（純靜態分析）**：
-   - **完全靜態閱讀，不跑指令**：禁止執行 `cargo test`、`cargo check`、`cargo clippy`、`pnpm test`、`pnpm lint`、`tsc` 等任何測試或檢查指令，完全仰賴 code reading 與靜態邏輯推理。
-   - **理解意圖與先看測試**：先掌握 PR 與 Ticket 規格意圖，先看測試程式碼是否有測到行為與邊界值（透過閱讀測試檔案內容來判斷，非執行測試）。
-   - **五軸審查**：對照 Ticket 規格與專案架構，逐一檢核 Correctness、Readability、Architecture、Security、Performance。指出架構問題時務必提出具體結構性解法（Structural Remedies），並依槓桿排序（Correctness/Security/架構問題優先於風格微調）。
-   - **嚴重度標記**：標註 `[Critical]`、`[Required]`、`[Consider]`、`[Nit]`、`[FYI]`。
-   - **判定標準**：只要能實質提升程式碼健康度即給予 Approve，不以個人寫法風格卡關；對結構退化與安全漏洞嚴格把關，不接受「之後再修」。
+1. **委派 `ce-code-review` 產出 findings（純靜態分析）**：
+   - 將 Step 1 的審查目標（PR 編號、commit、branch 或 diff）交給 `ce-code-review` 執行，並把 Ticket 規格與驗收條件一併餵入作為審查上下文。取得的 findings 包含 severity（P0–P3）、confidence、file:line、suggested_fix。
+   - **Spec 缺口補審**：ce-code-review 審的是 diff 品質；另行核對 Ticket 驗收條件，補上「規格要求但未實作」的缺口。
+   - **嚴重度映射**：P0→`[Critical]`、P1→`[Required]`、P2→`[Consider]`、P3→`[Nit]`、`advisory` 類或非問題觀察→`[FYI]`。
+   - **完全靜態閱讀，不跑指令**：審查引擎與本 skill 的補審皆禁止執行 `cargo test`、`cargo check`、`cargo clippy`、`pnpm test`、`pnpm lint`、`tsc` 等任何測試或檢查指令，完全仰賴 code reading 與靜態邏輯推理；測試覆蓋以閱讀測試檔案內容判斷，不執行測試。
+   - **判定標準**：能實質提升程式碼健康度即給予 Approve，不以個人寫法風格卡關；對結構退化與安全漏洞嚴格把關，不接受「之後再修」。
 2. **去重與既有討論過濾（僅 PR，嚴格執行）**：
    - **檢查核心：有沒有被提過、提的內容完不完整**（不用管作者後續是否有提交修改，原留言者會自行負責追蹤）：
      - **已提過且內容完整（一律略過不列）**：只要既有留言已明確點出該問題的核心事實或實質風險，即視為完整提出，**一律直接略過不列**。嚴禁以「補充重構程式碼、補充 ADR/文件說明、換句話說、或微調觀點」為由重複提出。
